@@ -22,7 +22,7 @@ Progress updates are additive. They do not replace any existing agent communicat
 
 ### Location
 
-`processGroupMessages()` in `src/index.ts`, after the typing indicator is set (line 208) and before `runAgent()` is called.
+`processGroupMessages()` in `src/index.ts`, after the typing indicator is set and before `runAgent()` is called.
 
 ### Behavior
 
@@ -30,6 +30,8 @@ Progress updates are additive. They do not replace any existing agent communicat
 - The ack message is defined as `ACK_MESSAGE` in `src/config.ts`, defaulting to `"On it!"`
 - Only for new container startups (the slow path through `processGroupMessages`)
 - Follow-up messages piped to an already-running container do not get an ack (the container is warm, response is faster, and the typing indicator suffices)
+- Ack and progress messages are sent directly via `channel.sendMessage`, intentionally bypassing `formatOutbound` (which strips internal XML tags from agent output). These are canned/system strings, not agent output.
+- Send failures (network errors, rate limits) are caught and logged but never abort message processing. Ack and progress are fire-and-forget.
 
 ## Progress Protocol
 
@@ -89,6 +91,10 @@ The `query()` loop in `container/agent-runner/src/index.ts`, inside the `for awa
 
 The agent-runner tracks `lastProgressTime` (timestamp of the last progress or result emission). A progress marker is only emitted if at least **12 seconds** have elapsed since the last emission. This keeps updates sparse without suppressing meaningful transitions. The timer resets on every emission (progress or result).
 
+- **Initialization**: `lastProgressTime` starts at `0` so the first tool use always emits immediately (no initial silence after the ack).
+- **Deduplication**: If the new progress message is identical to the most recently emitted one, it is suppressed regardless of the throttle timer. This prevents "Running a command..." appearing twice when two consecutive Bash calls are separated by >12 seconds.
+- **Defensive parsing**: Messages that don't match expected shapes (e.g., `assistant` with no content blocks, content blocks with unknown types) are silently ignored. Progress observation must never throw.
+
 ## Host Forwarding
 
 ### Location
@@ -98,7 +104,9 @@ The agent-runner tracks `lastProgressTime` (timestamp of the last progress or re
 ### Behavior
 
 - `runContainerAgent()` receives a new `onProgress` callback alongside the existing `onOutput`
+- The `runAgent()` wrapper in `src/index.ts` (which sits between `processGroupMessages` and `runContainerAgent`) gains an `onProgress` parameter and forwards it to `runContainerAgent`, just like it does for `onOutput`
 - The callback sends the progress message to the channel via `channel.sendMessage(chatJid, progressMessage)`
+- Send failures are caught and logged, same as the ack (fire-and-forget)
 - No additional throttling on the host side; the agent-runner's 12-second throttle is the single source of rate control
 - The existing typing indicator logic (`setTyping` at start/end) is unchanged
 
@@ -111,9 +119,13 @@ Progress messages already sent are fine if the agent later errors. They were acc
 | File | Change |
 |------|--------|
 | `src/config.ts` | Add `ACK_MESSAGE` constant (default `"On it!"`) |
-| `src/index.ts` | Send immediate ack in `processGroupMessages()` before `runAgent()`. Pass `onProgress` callback to container runner. |
-| `src/container-runner.ts` | Add `PROGRESS_START/END` marker constants and parsing in the stdout stream parser. Add `onProgress` callback parameter to `runContainerAgent()`. |
+| `src/index.ts` | Send immediate ack in `processGroupMessages()` before `runAgent()`. Thread `onProgress` callback through `runAgent()` to `runContainerAgent()`. |
+| `src/container-runner.ts` | Add `PROGRESS_START/END` marker constants and parsing in the stdout stream parser. Add `onProgress` callback parameter to `runContainerAgent()`. Update agent-runner sync logic to always overwrite `agent-runner-src/` (replacing the exists-check with unconditional copy). |
 | `container/agent-runner/src/index.ts` | Add `writeProgress()` function. Observe `tool_use` content blocks and `task_notification` messages in the `query()` loop. Throttle at 12s intervals. Tool-name-to-friendly-message mapping with fallback. |
+
+## Other Call Sites
+
+`runContainerAgent` is also called from `src/task-scheduler.ts` for scheduled tasks. Scheduled tasks run without a human waiting, so `onProgress` is passed as `undefined` at that call site. No ack is sent for scheduled tasks either.
 
 ## What Doesn't Change
 
@@ -121,4 +133,4 @@ Router, channels, IPC, queue, types, database — all untouched. The existing ou
 
 ## Deployment Note
 
-Since `container/agent-runner/src/index.ts` changes, the container image needs a rebuild (`./container/build.sh`). The agent-runner source is synced per-group into `data/sessions/{group}/agent-runner-src/` at container startup, but only if the directory doesn't already exist (`container-runner.ts` line 193). Existing per-group copies must be force-refreshed (delete the `agent-runner-src/` directories or update the sync logic to always overwrite).
+Since `container/agent-runner/src/index.ts` changes, the container image needs a rebuild (`./container/build.sh`). The agent-runner source is synced per-group into `data/sessions/{group}/agent-runner-src/` at container startup. The current sync logic skips the copy if the directory already exists. This change updates that logic to always overwrite, ensuring all groups pick up the new progress code without manual intervention. Group-specific agent-runner customizations (if any) will be overwritten — this is the intended behavior since customizations should be layered via the group's CLAUDE.md, not by modifying the runner source.
