@@ -113,6 +113,46 @@ function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_END_MARKER);
 }
 
+const PROGRESS_START_MARKER = '---NANOCLAW_PROGRESS_START---';
+const PROGRESS_END_MARKER = '---NANOCLAW_PROGRESS_END---';
+
+const PROGRESS_THROTTLE_MS = 12_000;
+let lastProgressTime = 0;
+let lastProgressMessage = '';
+
+const TOOL_PROGRESS_MAP: Record<string, string> = {
+  Bash: 'Running a command...',
+  Read: 'Reading files...',
+  Write: 'Writing code...',
+  Edit: 'Writing code...',
+  Glob: 'Searching the codebase...',
+  Grep: 'Searching the codebase...',
+  WebSearch: 'Searching the web...',
+  WebFetch: 'Fetching a web page...',
+  TodoWrite: 'Planning next steps...',
+  Task: 'Spinning up a subagent...',
+  TeamCreate: 'Spinning up a subagent...',
+  SendMessage: 'Coordinating with agents...',
+};
+
+function getToolProgressMessage(toolName: string): string {
+  return TOOL_PROGRESS_MAP[toolName] || `Using ${toolName}...`;
+}
+
+function maybeWriteProgress(message: string): void {
+  const now = Date.now();
+  // Deduplicate identical consecutive messages
+  if (message === lastProgressMessage) return;
+  // Throttle: at least PROGRESS_THROTTLE_MS between emissions
+  if (now - lastProgressTime < PROGRESS_THROTTLE_MS) return;
+
+  // Single console.log call to prevent interleaving with SDK stdout
+  console.log(`${PROGRESS_START_MARKER}\n${JSON.stringify({ message })}\n${PROGRESS_END_MARKER}`);
+
+  lastProgressTime = now;
+  lastProgressMessage = message;
+}
+
 function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
 }
@@ -392,6 +432,7 @@ async function runQuery(
   for await (const message of query({
     prompt: stream,
     options: {
+      model: 'sonnet',
       cwd: '/workspace/group',
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
@@ -433,8 +474,26 @@ async function runQuery(
     const msgType = message.type === 'system' ? `system/${(message as { subtype?: string }).subtype}` : message.type;
     log(`[msg #${messageCount}] type=${msgType}`);
 
-    if (message.type === 'assistant' && 'uuid' in message) {
-      lastAssistantUuid = (message as { uuid: string }).uuid;
+    if (message.type === 'assistant') {
+      if ('uuid' in message) {
+        lastAssistantUuid = (message as { uuid: string }).uuid;
+      }
+      // Observe tool_use for progress reporting
+      try {
+        const content = (message as { message?: { content?: unknown[] } }).message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block && typeof block === 'object' && 'type' in block && (block as { type: string }).type === 'tool_use') {
+              const toolName = (block as { name?: string }).name;
+              if (toolName) {
+                maybeWriteProgress(getToolProgressMessage(toolName));
+              }
+            }
+          }
+        }
+      } catch {
+        // Defensive: progress observation must never throw
+      }
     }
 
     if (message.type === 'system' && message.subtype === 'init') {
@@ -445,6 +504,16 @@ async function runQuery(
     if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
       const tn = message as { task_id: string; status: string; summary: string };
       log(`Task notification: task=${tn.task_id} status=${tn.status} summary=${tn.summary}`);
+      // Emit progress for agent team events
+      try {
+        if (tn.status === 'started' && tn.summary) {
+          maybeWriteProgress(`Subagent working on: ${tn.summary}`);
+        } else if (tn.status === 'completed' && tn.summary) {
+          maybeWriteProgress(`Subagent finished: ${tn.summary}`);
+        }
+      } catch {
+        // Defensive: progress observation must never throw
+      }
     }
 
     if (message.type === 'result') {
@@ -456,6 +525,9 @@ async function runQuery(
         result: textResult || null,
         newSessionId
       });
+      // Reset progress timer so first tool use after a result can report
+      lastProgressTime = Date.now();
+      lastProgressMessage = '';
     }
   }
 
