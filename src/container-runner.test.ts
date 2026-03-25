@@ -119,7 +119,9 @@ function emitProgressMarker(
   message: string,
 ) {
   const json = JSON.stringify({ message });
-  proc.stdout.push(`${PROGRESS_START_MARKER}\n${json}\n${PROGRESS_END_MARKER}\n`);
+  proc.stdout.push(
+    `${PROGRESS_START_MARKER}\n${json}\n${PROGRESS_END_MARKER}\n`,
+  );
 }
 
 describe('container-runner timeout behavior', () => {
@@ -246,7 +248,11 @@ describe('container-runner progress markers', () => {
 
     expect(onProgress).toHaveBeenCalledWith('Searching the web...');
 
-    emitOutputMarker(fakeProc, { status: 'success', result: 'Done', newSessionId: 'sess-1' });
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'Done',
+      newSessionId: 'sess-1',
+    });
     await vi.advanceTimersByTimeAsync(10);
     fakeProc.emit('close', 0);
     await vi.advanceTimersByTimeAsync(10);
@@ -275,7 +281,11 @@ describe('container-runner progress markers', () => {
     expect(onProgress).toHaveBeenCalledWith('Reading files...');
     expect(onProgress).toHaveBeenCalledWith('Running a command...');
 
-    emitOutputMarker(fakeProc, { status: 'success', result: 'Done', newSessionId: 'sess-2' });
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'Done',
+      newSessionId: 'sess-2',
+    });
     await vi.advanceTimersByTimeAsync(10);
     fakeProc.emit('close', 0);
     await vi.advanceTimersByTimeAsync(10);
@@ -296,7 +306,11 @@ describe('container-runner progress markers', () => {
     emitProgressMarker(fakeProc, 'Searching the codebase...');
     await vi.advanceTimersByTimeAsync(10);
 
-    emitOutputMarker(fakeProc, { status: 'success', result: 'Done', newSessionId: 'sess-3' });
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'Done',
+      newSessionId: 'sess-3',
+    });
     await vi.advanceTimersByTimeAsync(10);
     fakeProc.emit('close', 0);
     await vi.advanceTimersByTimeAsync(10);

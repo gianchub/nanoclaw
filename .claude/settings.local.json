@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(npx tsx:*)",
+      "Bash(launchctl list:*)",
+      "Bash(npm run:*)",
+      "Bash(./container/build.sh 2>&1)",
+      "Bash(launchctl unload:*)",
+      "Bash(grep -r \"fallbackModel\\\\|model\\\\|claude-\" /Users/fab/nanoclaw/nanoclaw/container/agent-runner/ --include=\"*.ts\" --include=\"*.js\" 2>/dev/null | head -30)",
+      "Bash(docker builder:*)",
+      "Bash(docker run:*)",
+      "Bash(docker build:*)",
+      "Bash(sqlite3 store/messages.db \".schema registered_groups\" 2>&1)",
+      "Bash(sqlite3 store/messages.db \"SELECT jid, container_config FROM registered_groups WHERE jid LIKE 'tg:%'\" 2>&1)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx tsc:*)",
+      "Read(//Users/fab/Library/Logs/**)",
+      "Bash(ls /Users/fab/nanoclaw/nanoclaw/data/*.log)"
+    ]
+  }
+}

@@ -47,6 +47,18 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Keep an index in your memory for the files you create
 
+## Model Selection for Agent Teams
+
+When creating subagents or teams, choose the model based on task type:
+
+- *Coding tasks* (writing code, debugging, refactoring, code review, architecture): always use `model: "opus"` — the most capable model for code quality.
+- *Medium-complexity tasks* (research, analysis, writing, planning): use `model: "sonnet"`.
+- *Simple tasks* (lookups, quick answers, formatting, reminders, translations): use `model: "haiku"` — fastest and cheapest.
+
+When in doubt, default to Haiku for simple tasks. Only escalate to Sonnet or Opus when the task genuinely requires it.
+
+For single-step tasks you handle directly (no subagents), you're already running on Sonnet — that's fine for most work. Only create a subagent on Opus if the task specifically involves writing or reviewing code.
+
 ## Message Formatting
 
 NEVER use markdown. Only use WhatsApp/Telegram formatting:
