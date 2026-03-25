@@ -111,6 +111,17 @@ function emitOutputMarker(
   proc.stdout.push(`${OUTPUT_START_MARKER}\n${json}\n${OUTPUT_END_MARKER}\n`);
 }
 
+const PROGRESS_START_MARKER = '---NANOCLAW_PROGRESS_START---';
+const PROGRESS_END_MARKER = '---NANOCLAW_PROGRESS_END---';
+
+function emitProgressMarker(
+  proc: ReturnType<typeof createFakeProcess>,
+  message: string,
+) {
+  const json = JSON.stringify({ message });
+  proc.stdout.push(`${PROGRESS_START_MARKER}\n${json}\n${PROGRESS_END_MARKER}\n`);
+}
+
 describe('container-runner timeout behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -206,5 +217,91 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
+  });
+});
+
+describe('container-runner progress markers', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fakeProc = createFakeProcess();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('calls onProgress when a progress marker is emitted', async () => {
+    const onOutput = vi.fn(async () => {});
+    const onProgress = vi.fn(async () => {});
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      onOutput,
+      onProgress,
+    );
+
+    emitProgressMarker(fakeProc, 'Searching the web...');
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(onProgress).toHaveBeenCalledWith('Searching the web...');
+
+    emitOutputMarker(fakeProc, { status: 'success', result: 'Done', newSessionId: 'sess-1' });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+  });
+
+  it('handles multiple progress markers interleaved with output', async () => {
+    const onOutput = vi.fn(async () => {});
+    const onProgress = vi.fn(async () => {});
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      onOutput,
+      onProgress,
+    );
+
+    emitProgressMarker(fakeProc, 'Reading files...');
+    await vi.advanceTimersByTimeAsync(10);
+    emitProgressMarker(fakeProc, 'Running a command...');
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(onProgress).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenCalledWith('Reading files...');
+    expect(onProgress).toHaveBeenCalledWith('Running a command...');
+
+    emitOutputMarker(fakeProc, { status: 'success', result: 'Done', newSessionId: 'sess-2' });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    await resultPromise;
+  });
+
+  it('works without onProgress callback (backwards compatible)', async () => {
+    const onOutput = vi.fn(async () => {});
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      onOutput,
+      // no onProgress
+    );
+
+    emitProgressMarker(fakeProc, 'Searching the codebase...');
+    await vi.advanceTimersByTimeAsync(10);
+
+    emitOutputMarker(fakeProc, { status: 'success', result: 'Done', newSessionId: 'sess-3' });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
   });
 });
