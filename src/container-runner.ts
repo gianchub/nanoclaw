@@ -192,7 +192,7 @@ function buildVolumeMounts(
     group.folder,
     'agent-runner-src',
   );
-  if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
+  if (fs.existsSync(agentRunnerSrc)) {
     fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
   }
   mounts.push({
@@ -383,19 +383,28 @@ export async function runContainerAgent(
         // Parse progress markers
         if (onProgress) {
           let progStartIdx: number;
-          while ((progStartIdx = parseBuffer.indexOf(PROGRESS_START_MARKER)) !== -1) {
-            const progEndIdx = parseBuffer.indexOf(PROGRESS_END_MARKER, progStartIdx);
+          while (
+            (progStartIdx = parseBuffer.indexOf(PROGRESS_START_MARKER)) !== -1
+          ) {
+            const progEndIdx = parseBuffer.indexOf(
+              PROGRESS_END_MARKER,
+              progStartIdx,
+            );
             if (progEndIdx === -1) break;
 
             const progJsonStr = parseBuffer
               .slice(progStartIdx + PROGRESS_START_MARKER.length, progEndIdx)
               .trim();
-            parseBuffer = parseBuffer.slice(progEndIdx + PROGRESS_END_MARKER.length);
+            parseBuffer = parseBuffer.slice(
+              progEndIdx + PROGRESS_END_MARKER.length,
+            );
 
             try {
               const parsed = JSON.parse(progJsonStr);
               if (parsed.message) {
-                outputChain = outputChain.then(() => onProgress(parsed.message));
+                outputChain = outputChain.then(() =>
+                  onProgress(parsed.message),
+                );
               }
             } catch (err) {
               logger.warn(
