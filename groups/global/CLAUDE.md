@@ -32,6 +32,8 @@ Text inside `<internal>` tags is logged but not sent to the user. If you've alre
 
 ### Sub-agents and teammates
 
+When creating agent teams, name each subagent after the specific task it's working on (e.g. "Weather Lookup", "File Organizer", "Meeting Summary"), not generic roles like "Code Reviewer" or "Project Manager".
+
 When working as a sub-agent or teammate, only use `send_message` if instructed to by the main agent.
 
 ## Your Workspace
